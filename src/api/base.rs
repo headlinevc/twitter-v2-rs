@@ -52,10 +52,15 @@ where
             .execute(req)
             .await?
             .api_error_for_status()
-            .await?
+            .await?;
+        let reset = response
+            .headers()
+            .get("x-rate-limit-reset")
+            .map(|v| v.to_str().unwrap().parse().unwrap());
+        let payload = response
             .json()
             .await?;
-        Ok(ApiResponse::new(self, url, response))
+        Ok(ApiResponse::new(self, url, payload, reset))
     }
 
     pub(crate) async fn stream<T: DeserializeOwned, M: DeserializeOwned>(

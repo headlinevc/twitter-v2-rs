@@ -67,6 +67,7 @@ pub struct ApiError {
     pub detail: String,
     #[serde(default)]
     pub errors: Vec<ApiErrorItem>,
+    pub reset: Option<i64>,
 }
 
 impl fmt::Display for ApiError {
@@ -82,14 +83,16 @@ pub struct ApiResponse<A, T, M> {
     client: TwitterApi<A>,
     url: Url,
     payload: ApiPayload<T, M>,
+    pub reset: Option<i64>,
 }
 
 impl<A, T, M> ApiResponse<A, T, M> {
-    pub(crate) fn new(client: &TwitterApi<A>, url: Url, payload: ApiPayload<T, M>) -> Self {
+    pub(crate) fn new(client: &TwitterApi<A>, url: Url, payload: ApiPayload<T, M>, reset: Option<i64>) -> Self {
         Self {
             client: client.clone(),
             url,
             payload,
+            reset,
         }
     }
     pub fn client(&self) -> &TwitterApi<A> {
@@ -148,6 +151,7 @@ where
             client: self.client.clone(),
             url: self.url.clone(),
             payload: self.payload.clone(),
+            reset: self.reset,
         }
     }
 }
@@ -204,6 +208,10 @@ pub(crate) trait ApiResponseExt: Sized {
 impl ApiResponseExt for Response {
     async fn api_error_for_status(self) -> Result<Self> {
         let status = self.status();
+        let reset = self
+            .headers()
+            .get("x-rate-limit-reset")
+            .map(|v| v.to_str().unwrap().parse().unwrap());
         if status.is_success() {
             Ok(self)
         } else {
@@ -211,11 +219,13 @@ impl ApiResponseExt for Response {
             Err(Error::Api(
                 if let Ok(mut error) = serde_json::from_str::<ApiError>(&text) {
                     error.status = status;
+                    error.reset = reset;
                     error
                 } else {
                     ApiError {
                         status,
                         detail: text,
+                        reset,
                         ..Default::default()
                     }
                 },
